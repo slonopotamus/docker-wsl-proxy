@@ -1,0 +1,25 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  go-fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: setup go
+        uses: actions/setup-go@v2
+      - name: go fmt
+        uses: Jerome1337/gofmt-action@v1.0.4
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: setup go
+        uses: actions/setup-go@v2
+      - run: go build
+      - name: upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: binary
+          path: "*.exe"
