@@ -3,6 +3,7 @@ module docker-wsl-proxy
 go 1.17
 
 require (
+	github.com/containerd/containerd v1.5.9
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v20.10.12+incompatible
 	github.com/opencontainers/image-spec v1.0.2
@@ -16,7 +17,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/cilium/ebpf v0.8.0 // indirect
 	github.com/containerd/cgroups v1.0.2 // indirect
-	github.com/containerd/containerd v1.5.9 // indirect
 	github.com/containerd/continuity v0.2.2 // indirect
 	github.com/containerd/fifo v1.0.0 // indirect
 	github.com/coreos/etcd v3.3.27+incompatible // indirect
