@@ -8,14 +8,14 @@ import (
 	"github.com/docker/distribution/reference"
 	"github.com/docker/docker/api/server"
 	"github.com/docker/docker/api/server/router"
-	"github.com/docker/docker/api/server/router/checkpoint"
+	checkpointrouter "github.com/docker/docker/api/server/router/checkpoint"
 	containerrouter "github.com/docker/docker/api/server/router/container"
 	distributionrouter "github.com/docker/docker/api/server/router/distribution"
 	imagerouter "github.com/docker/docker/api/server/router/image"
 	pluginrouter "github.com/docker/docker/api/server/router/plugin"
-	"github.com/docker/docker/api/server/router/session"
+	sessionrouter "github.com/docker/docker/api/server/router/session"
 	swarmrouter "github.com/docker/docker/api/server/router/swarm"
-	"github.com/docker/docker/api/server/router/volume"
+	volumerouter "github.com/docker/docker/api/server/router/volume"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
@@ -23,6 +23,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	containerpkg "github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/listeners"
@@ -34,6 +35,7 @@ import (
 	"github.com/opencontainers/image-spec/specs-go/v1"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -149,8 +151,7 @@ func (p ContainerProxy) ContainerCreate(config types.ContainerCreateConfig) (con
 }
 
 func (p ContainerProxy) ContainerKill(name string, sig uint64) error {
-	//TODO implement me
-	panic("implement me")
+	return p.daemon.client.ContainerKill(p.daemon.ctx, name, strconv.FormatUint(sig, 10))
 }
 
 func (p ContainerProxy) ContainerPause(name string) error {
@@ -170,7 +171,6 @@ func (p ContainerProxy) ContainerResize(name string, height, width int) error {
 }
 
 func (p ContainerProxy) ContainerRestart(name string, seconds *int) error {
-	// TODO: is it correct?
 	timeout := time.Duration(*seconds) * time.Second
 	return p.daemon.client.ContainerRestart(p.daemon.ctx, name, &timeout)
 }
@@ -193,7 +193,6 @@ func (p ContainerProxy) ContainerStart(name string, _ *container.HostConfig, che
 }
 
 func (p ContainerProxy) ContainerStop(name string, seconds *int) error {
-	// TODO: is it correct?
 	timeout := time.Duration(*seconds) * time.Second
 	return p.daemon.client.ContainerStop(p.daemon.ctx, name, &timeout)
 }
@@ -216,8 +215,16 @@ func (p ContainerProxy) ContainerWait(ctx context.Context, name string, conditio
 }
 
 func (p ContainerProxy) ContainerChanges(name string) ([]archive.Change, error) {
-	//TODO implement me
-	panic("implement me")
+	diff, err := p.daemon.client.ContainerDiff(p.daemon.ctx, name)
+	result := make([]archive.Change, len(diff))
+	for index, item := range diff {
+		result[index] = archive.Change{
+			Path: item.Path,
+			Kind: archive.ChangeType(item.Kind),
+		}
+	}
+
+	return result, err
 }
 
 func (p ContainerProxy) ContainerInspect(name string, _ bool, _ string) (interface{}, error) {
@@ -291,11 +298,17 @@ func (p ImageProxy) ImageDelete(imageRef string, force, prune bool) ([]types.Ima
 }
 
 func (p ImageProxy) ImageHistory(imageName string) ([]*image.HistoryResponseItem, error) {
-	//TODO implement me
-	panic("implement me")
+	history, err := p.daemon.client.ImageHistory(p.daemon.ctx, imageName)
+
+	result := make([]*image.HistoryResponseItem, len(history))
+	for index, item := range history {
+		result[index] = &item
+	}
+
+	return result, err
 }
 
-func (p ImageProxy) Images(imageFilters filters.Args, all bool, withExtraAttrs bool) ([]*types.ImageSummary, error) {
+func (p ImageProxy) Images(imageFilters filters.Args, all bool, _ bool) ([]*types.ImageSummary, error) {
 	options := types.ImageListOptions{
 		All:     all,
 		Filters: imageFilters,
@@ -317,7 +330,6 @@ func (p ImageProxy) LookupImage(name string) (*types.ImageInspect, error) {
 }
 
 func (p ImageProxy) TagImage(imageName, repository, tag string) (string, error) {
-	// TODO: review this function
 	ref := [...]string{repository, tag}
 	refstr := strings.Join(ref[:], ":")
 	err := p.daemon.client.ImageTag(p.daemon.ctx, imageName, refstr)
@@ -373,7 +385,7 @@ func (p ImageProxy) ExportImage(names []string, outStream io.Writer) error {
 	return err
 }
 
-func (p ImageProxy) PullImage(ctx context.Context, image, tag string, platform *v1.Platform, metaHeaders map[string][]string, authConfig *types.AuthConfig, outStream io.Writer) error {
+func (p ImageProxy) PullImage(ctx context.Context, image, tag string, platform *v1.Platform, _ map[string][]string, authConfig *types.AuthConfig, outStream io.Writer) error {
 	ref := [...]string{image, tag}
 
 	platformStr := ""
@@ -397,7 +409,7 @@ func (p ImageProxy) PullImage(ctx context.Context, image, tag string, platform *
 	return err
 }
 
-func (p ImageProxy) PushImage(ctx context.Context, image, tag string, metaHeaders map[string][]string, authConfig *types.AuthConfig, outStream io.Writer) error {
+func (p ImageProxy) PushImage(ctx context.Context, image, tag string, _ map[string][]string, authConfig *types.AuthConfig, outStream io.Writer) error {
 	ref := [...]string{image, tag}
 
 	options := types.ImagePushOptions{
@@ -415,7 +427,7 @@ func (p ImageProxy) PushImage(ctx context.Context, image, tag string, metaHeader
 	return err
 }
 
-func (p ImageProxy) SearchRegistryForImages(ctx context.Context, filtersArgs string, term string, limit int, authConfig *types.AuthConfig, metaHeaders map[string][]string) (*registry.SearchResults, error) {
+func (p ImageProxy) SearchRegistryForImages(ctx context.Context, filtersArgs string, term string, limit int, authConfig *types.AuthConfig, _ map[string][]string) (*registry.SearchResults, error) {
 	f, err := filters.FromJSON(filtersArgs)
 	if err != nil {
 		return nil, err
@@ -442,18 +454,31 @@ type VolumeProxy struct {
 }
 
 func (p VolumeProxy) List(ctx context.Context, filter filters.Args) ([]*types.Volume, []string, error) {
-	volumeList, err := p.daemon.client.VolumeList(p.daemon.ctx, filter)
+	volumeList, err := p.daemon.client.VolumeList(ctx, filter)
 	return volumeList.Volumes, volumeList.Warnings, err
 }
 
-func (p VolumeProxy) Get(ctx context.Context, name string, opts ...volumeopts.GetOption) (*types.Volume, error) {
+func (p VolumeProxy) Get(ctx context.Context, name string, _ ...volumeopts.GetOption) (*types.Volume, error) {
 	vol, err := p.daemon.client.VolumeInspect(ctx, name)
 	return &vol, err
 }
 
 func (p VolumeProxy) Create(ctx context.Context, name, driverName string, opts ...volumeopts.CreateOption) (*types.Volume, error) {
-	//TODO implement me
-	panic("implement me")
+	config := volumeopts.CreateConfig{}
+
+	for _, opt := range opts {
+		opt(&config)
+	}
+
+	body := volume.VolumeCreateBody{
+		Driver:     driverName,
+		DriverOpts: config.Options,
+		Labels:     config.Labels,
+		Name:       name,
+	}
+
+	response, err := p.daemon.client.VolumeCreate(ctx, body)
+	return &response, err
 }
 
 func (p VolumeProxy) Remove(ctx context.Context, name string, opts ...volumeopts.RemoveOption) error {
@@ -532,7 +557,7 @@ func (p SwarmProxy) CreateService(spec swarm.ServiceSpec, encodedRegistryAuth st
 	return &response, err
 }
 
-func (p SwarmProxy) UpdateService(serviceID string, version uint64, spec swarm.ServiceSpec, options types.ServiceUpdateOptions, queryRegistry bool) (*types.ServiceUpdateResponse, error) {
+func (p SwarmProxy) UpdateService(serviceID string, version uint64, spec swarm.ServiceSpec, options types.ServiceUpdateOptions, _ bool) (*types.ServiceUpdateResponse, error) {
 	response, err := p.daemon.client.ServiceUpdate(p.daemon.ctx, serviceID, swarm.Version{Index: version}, spec, options)
 	return &response, err
 }
@@ -632,8 +657,12 @@ func (p PluginProxy) Enable(name string, config *types.PluginEnableConfig) error
 }
 
 func (p PluginProxy) List(args filters.Args) ([]types.Plugin, error) {
-	//TODO implement me
-	panic("implement me")
+	list, err := p.daemon.client.PluginList(p.daemon.ctx, args)
+	result := make([]types.Plugin, len(list))
+	for index, item := range list {
+		result[index] = *item
+	}
+	return result, err
 }
 
 func (p PluginProxy) Inspect(name string) (*types.Plugin, error) {
@@ -665,13 +694,21 @@ func (p PluginProxy) Push(ctx context.Context, name string, metaHeaders http.Hea
 }
 
 func (p PluginProxy) Upgrade(ctx context.Context, ref reference.Named, name string, metaHeaders http.Header, authConfig *types.AuthConfig, privileges types.PluginPrivileges, outStream io.Writer) error {
-	//TODO implement me
-	panic("implement me")
+	options := types.PluginInstallOptions{
+		// TODO implement me
+	}
+
+	body, err := p.daemon.client.PluginUpgrade(ctx, name, options)
+	if err != nil {
+		return err
+	}
+	defer body.Close()
+	_, err = io.Copy(outStream, body)
+	return err
 }
 
 func (p PluginProxy) CreateFromContext(ctx context.Context, tarCtx io.ReadCloser, options *types.PluginCreateOptions) error {
-	//TODO implement me
-	panic("implement me")
+	return p.daemon.client.PluginCreate(ctx, tarCtx, *options)
 }
 
 type DistributionProxy struct {
@@ -705,13 +742,13 @@ func main() {
 
 	routers := []router.Router{
 		// we need to add the checkpoint router before the container router or the DELETE gets masked
-		checkpoint.NewRouter(CheckpointProxy{daemon: daemon}, decoder),
+		checkpointrouter.NewRouter(CheckpointProxy{daemon: daemon}, decoder),
 		containerrouter.NewRouter(ContainerProxy{daemon: daemon}, decoder, false),
 		imagerouter.NewRouter(ImageProxy{daemon: daemon}),
 		//system.NewRouter(daemon, opts.cluster, opts.buildkit, opts.features),
-		volume.NewRouter(VolumeProxy{daemon: daemon}),
+		volumerouter.NewRouter(VolumeProxy{daemon: daemon}),
 		//build.NewRouter(opts.buildBackend, opts.daemon, opts.features),
-		session.NewRouter(SessionProxy{daemon: daemon}),
+		sessionrouter.NewRouter(SessionProxy{daemon: daemon}),
 		swarmrouter.NewRouter(SwarmProxy{daemon: daemon}),
 		pluginrouter.NewRouter(PluginProxy{daemon: daemon}),
 		distributionrouter.NewRouter(DistributionProxy{daemon: daemon}),
