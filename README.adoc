@@ -1,0 +1,26 @@
+= docker-wsl-proxy
+Marat Radchenko
+:slug: slonopotamus/docker-wsl-proxy
+:uri-project: https://github.com/{slug}
+:uri-ci: {uri-project}/actions?query=branch%3Amain
+
+image:{uri-project}/workflows/CI/badge.svg?branch=main[Build Status,link={uri-ci}]
+image:https://img.shields.io/github/release/{slug}.svg[Download,link={uri-project}/releases/latest]
+
+== Overview
+
+docker-wsl-proxy allows connecting from Windows to Docker running in WSL2.
+
+There are two important aspects of this task:
+
+- Conversion of Windows paths to their WSL equivalents
+- Tunnelling Docker API calls _into_ WSL2
+
+== Building from source
+
+. https://go.dev/doc/install[Install Go]
+. Clone docker-wsl-proxy Git repository
+. Run `go build` in repository root
+. Now you have ready-to-use `docker-wsl-proxy.exe`
+
+You can also use `go run docker-wsl-proxy.go` to build & run in one step.
