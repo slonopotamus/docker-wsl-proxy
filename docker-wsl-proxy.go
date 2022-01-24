@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"github.com/containerd/containerd/platforms"
 	"github.com/docker/distribution"
@@ -39,6 +41,21 @@ import (
 	"strings"
 	"time"
 )
+
+func EncodeAuthToBase64(authConfig *types.AuthConfig) (string, error) {
+	if authConfig == nil {
+		return "", nil
+	}
+	buf, err := json.Marshal(authConfig)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(buf), nil
+}
+
+func CloseSilent(readCloser io.ReadCloser) {
+	_ = readCloser.Close()
+}
 
 type ProxyDaemon struct {
 	ctx    context.Context
@@ -124,12 +141,13 @@ func (p ContainerProxy) ContainerCopy(name string, resource string) (io.ReadClos
 }
 
 func (p ContainerProxy) ContainerExport(name string, out io.Writer) error {
-	body, err := p.daemon.client.ContainerExport(p.daemon.ctx, name)
+	response, err := p.daemon.client.ContainerExport(p.daemon.ctx, name)
 	if err != nil {
 		return err
 	}
-	defer body.Close()
-	_, err = io.Copy(out, body)
+	defer CloseSilent(response)
+
+	_, err = io.Copy(out, response)
 	return err
 }
 
@@ -248,15 +266,16 @@ func (p ContainerProxy) ContainerStats(ctx context.Context, name string, config 
 	if err != nil {
 		return err
 	}
-	defer stats.Body.Close()
+	defer CloseSilent(stats.Body)
+
 	_, err = io.Copy(config.OutStream, stats.Body)
 	return err
 }
 
 func (p ContainerProxy) ContainerTop(name string, psArgs string) (*container.ContainerTopOKBody, error) {
 	arguments := [...]string{psArgs}
-	body, err := p.daemon.client.ContainerTop(p.daemon.ctx, name, arguments[:])
-	return &body, err
+	response, err := p.daemon.client.ContainerTop(p.daemon.ctx, name, arguments[:])
+	return &response, err
 }
 
 func (p ContainerProxy) Containers(config *types.ContainerListOptions) ([]*types.Container, error) {
@@ -346,7 +365,8 @@ func (p ImageProxy) LoadImage(inTar io.ReadCloser, outStream io.Writer, quiet bo
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer CloseSilent(response.Body)
+
 	_, err = io.Copy(outStream, response.Body)
 	return err
 }
@@ -370,22 +390,29 @@ func (p ImageProxy) ImportImage(src string, repository, platform string, tag str
 	if err != nil {
 		return nil
 	}
-	defer response.Close()
+	defer CloseSilent(response)
+
 	_, err = io.Copy(outStream, response)
 	return err
 }
 
 func (p ImageProxy) ExportImage(names []string, outStream io.Writer) error {
-	body, err := p.daemon.client.ImageSave(p.daemon.ctx, names)
+	response, err := p.daemon.client.ImageSave(p.daemon.ctx, names)
 	if err != nil {
 		return err
 	}
-	defer body.Close()
-	_, err = io.Copy(outStream, body)
+	defer CloseSilent(response)
+
+	_, err = io.Copy(outStream, response)
 	return err
 }
 
 func (p ImageProxy) PullImage(ctx context.Context, image, tag string, platform *v1.Platform, _ map[string][]string, authConfig *types.AuthConfig, outStream io.Writer) error {
+	authEncoded, err := EncodeAuthToBase64(authConfig)
+	if err != nil {
+		return err
+	}
+
 	ref := [...]string{image, tag}
 
 	platformStr := ""
@@ -394,48 +421,58 @@ func (p ImageProxy) PullImage(ctx context.Context, image, tag string, platform *
 	}
 
 	options := types.ImagePullOptions{
-		// TODO implement me
-		RegistryAuth:  "",
+		All:           false,
+		RegistryAuth:  authEncoded,
 		PrivilegeFunc: nil,
 		Platform:      platformStr,
 	}
 
-	body, err := p.daemon.client.ImagePull(ctx, strings.Join(ref[:], ":"), options)
+	response, err := p.daemon.client.ImagePull(ctx, strings.Join(ref[:], ":"), options)
 	if err != nil {
 		return err
 	}
-	defer body.Close()
-	_, err = io.Copy(outStream, body)
+	defer CloseSilent(response)
+
+	_, err = io.Copy(outStream, response)
 	return err
 }
 
 func (p ImageProxy) PushImage(ctx context.Context, image, tag string, _ map[string][]string, authConfig *types.AuthConfig, outStream io.Writer) error {
-	ref := [...]string{image, tag}
-
-	options := types.ImagePushOptions{
-		// TODO implement me
-		RegistryAuth:  "",
-		PrivilegeFunc: nil,
-	}
-
-	body, err := p.daemon.client.ImagePush(ctx, strings.Join(ref[:], ":"), options)
+	authEncoded, err := EncodeAuthToBase64(authConfig)
 	if err != nil {
 		return err
 	}
-	defer body.Close()
-	_, err = io.Copy(outStream, body)
+
+	ref := [...]string{image, tag}
+
+	options := types.ImagePushOptions{
+		RegistryAuth:  authEncoded,
+		PrivilegeFunc: nil,
+	}
+
+	response, err := p.daemon.client.ImagePush(ctx, strings.Join(ref[:], ":"), options)
+	if err != nil {
+		return err
+	}
+	defer response.Close()
+
+	_, err = io.Copy(outStream, response)
 	return err
 }
 
 func (p ImageProxy) SearchRegistryForImages(ctx context.Context, filtersArgs string, term string, limit int, authConfig *types.AuthConfig, _ map[string][]string) (*registry.SearchResults, error) {
+	authEncoded, err := EncodeAuthToBase64(authConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	f, err := filters.FromJSON(filtersArgs)
 	if err != nil {
 		return nil, err
 	}
 
 	options := types.ImageSearchOptions{
-		// TODO implement me
-		RegistryAuth:  "",
+		RegistryAuth:  authEncoded,
 		PrivilegeFunc: nil,
 		Filters:       f,
 		Limit:         limit,
@@ -678,32 +715,66 @@ func (p PluginProxy) Set(name string, args []string) error {
 	return p.daemon.client.PluginSet(p.daemon.ctx, name, args)
 }
 
-func (p PluginProxy) Privileges(ctx context.Context, ref reference.Named, metaHeaders http.Header, authConfig *types.AuthConfig) (types.PluginPrivileges, error) {
+func (p PluginProxy) Privileges(ctx context.Context, ref reference.Named, _ http.Header, authConfig *types.AuthConfig) (types.PluginPrivileges, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (p PluginProxy) Pull(ctx context.Context, ref reference.Named, name string, metaHeaders http.Header, authConfig *types.AuthConfig, privileges types.PluginPrivileges, outStream io.Writer, opts ...plugin.CreateOpt) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (p PluginProxy) Push(ctx context.Context, name string, metaHeaders http.Header, authConfig *types.AuthConfig, outStream io.Writer) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (p PluginProxy) Upgrade(ctx context.Context, ref reference.Named, name string, metaHeaders http.Header, authConfig *types.AuthConfig, privileges types.PluginPrivileges, outStream io.Writer) error {
-	options := types.PluginInstallOptions{
-		// TODO implement me
-	}
-
-	body, err := p.daemon.client.PluginUpgrade(ctx, name, options)
+func (p PluginProxy) Pull(ctx context.Context, ref reference.Named, name string, _ http.Header, authConfig *types.AuthConfig, privileges types.PluginPrivileges, outStream io.Writer, opts ...plugin.CreateOpt) error {
+	authEncoded, err := EncodeAuthToBase64(authConfig)
 	if err != nil {
 		return err
 	}
-	defer body.Close()
-	_, err = io.Copy(outStream, body)
+
+	options := types.PluginInstallOptions{
+		RegistryAuth: authEncoded,
+		RemoteRef:    ref.Name(),
+	}
+
+	response, err := p.daemon.client.PluginInstall(ctx, name, options)
+	if err != nil {
+		return err
+	}
+	defer CloseSilent(response)
+
+	_, err = io.Copy(outStream, response)
+	return err
+}
+
+func (p PluginProxy) Push(ctx context.Context, name string, _ http.Header, authConfig *types.AuthConfig, outStream io.Writer) error {
+	authEncoded, err := EncodeAuthToBase64(authConfig)
+	if err != nil {
+		return err
+	}
+
+	response, err := p.daemon.client.PluginPush(ctx, name, authEncoded)
+	if err != nil {
+		return err
+	}
+	defer CloseSilent(response)
+
+	_, err = io.Copy(outStream, response)
+	return err
+}
+
+func (p PluginProxy) Upgrade(ctx context.Context, ref reference.Named, name string, _ http.Header, authConfig *types.AuthConfig, privileges types.PluginPrivileges, outStream io.Writer) error {
+	authEncoded, err := EncodeAuthToBase64(authConfig)
+	if err != nil {
+		return err
+	}
+
+	options := types.PluginInstallOptions{
+		RegistryAuth: authEncoded,
+		RemoteRef:    ref.Name(),
+	}
+
+	response, err := p.daemon.client.PluginUpgrade(ctx, name, options)
+	if err != nil {
+		return err
+	}
+	defer CloseSilent(response)
+
+	_, err = io.Copy(outStream, response)
 	return err
 }
 
@@ -725,6 +796,8 @@ var wslDistro = flag.String("wsl-distro", "stevedore", "")
 func main() {
 	flag.Parse()
 
+	// TODO: we need to connect to docker running within WSL2.
+	// Possibly https://github.com/docker/go-connections/pull/98 will help
 	c, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		panic(err)
@@ -756,7 +829,8 @@ func main() {
 
 	srv.InitRouter(routers...)
 
-	//ls, err := listeners.Init("npipe", opts.DefaultNamedPipe, serverConfig.SocketGroup, serverConfig.TLSConfig)
+	// TODO: Getting access denied on npipe for some reason
+	// ls, err := listeners.Init("npipe", "//./pipe/docker_engine_linux", serverConfig.SocketGroup, serverConfig.TLSConfig)
 	ls, err := listeners.Init("tcp", "127.0.0.1:12345", serverConfig.SocketGroup, serverConfig.TLSConfig)
 	if err != nil {
 		panic(err)
