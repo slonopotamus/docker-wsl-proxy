@@ -2,68 +2,30 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
-	"github.com/Microsoft/go-winio"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/daemon/listeners"
+	"github.com/docker/go-connections/sockets"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
 )
 
-func createListener(network, addr, socketGroup string) (net.Listener, error) {
-	switch network {
-	case "npipe":
-		// allow Administrators and SYSTEM, plus whatever additional users or groups were specified
-		sddl := "D:P(A;;GA;;;BA)(A;;GA;;;SY)"
-		if socketGroup != "" {
-			for _, g := range strings.Split(socketGroup, ",") {
-				sid, err := winio.LookupSidByName(g)
-				if err != nil {
-					return nil, err
-				}
-				sddl += fmt.Sprintf("(A;;GRGW;;;%s)", sid)
-			}
-		}
-
-		c := winio.PipeConfig{
-			SecurityDescriptor: sddl,
-			MessageMode:        true,  // Use message mode so that CloseWrite() is supported
-			InputBufferSize:    65536, // Use 64KB buffers to improve performance
-			OutputBufferSize:   65536,
-		}
-		return winio.ListenPipe(addr, &c)
-
-	default:
-		return net.Listen(network, addr)
-	}
-}
-
-func createTransport(network, addr string) *http.Transport {
-	transport := http.Transport{}
-
-	switch network {
-	case "npipe":
-		// No need for compression in local communications.
-		transport.DisableCompression = true
-		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return winio.DialPipeContext(ctx, addr)
-		}
-	}
-
-	return &transport
-}
-
 func main() {
 	// var wslDistro = flag.String("wsl-distro", "stevedore", "")
 	var socketGroup = flag.String("g", "docker-users", "")
+
+	const listenProto = "npipe"
+	const listenAddr = "//./pipe/docker_engine_proxy"
+
+	// TODO: we need to connect to docker running within WSL2.
+	const connectProto = "npipe"
+	const connectAddr = "//./pipe/docker_engine_linux"
 
 	flag.Parse()
 
@@ -72,25 +34,39 @@ func main() {
 		Host:   "docker",
 	}
 
+	var err error
+
 	proxy := httputil.NewSingleHostReverseProxy(&proxyTarget)
 	proxy.Director = proxyDirector(proxy.Director)
 
-	// TODO: we need to connect to docker running within WSL2.
-	proxy.Transport = createTransport("npipe", "//./pipe/docker_engine_linux")
-
-	listener, err := createListener("npipe", "//./pipe/docker_engine_proxy", *socketGroup)
+	proxy.Transport, err = createTransport(connectProto, connectAddr)
 	if err != nil {
 		panic(err)
 	}
 
-	httpServer := http.Server{
+	err = serve(listenProto, listenAddr, *socketGroup, proxy)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func createTransport(proto string, addr string) (http.RoundTripper, error) {
+	transport := &http.Transport{}
+	return transport, sockets.ConfigureTransport(transport, proto, addr)
+}
+
+func serve(proto string, addr string, socketGroup string, proxy *httputil.ReverseProxy) error {
+	ls, err := listeners.Init(proto, addr, socketGroup, nil)
+	if err != nil {
+		return err
+	}
+
+	server := http.Server{
+		Addr:    addr,
 		Handler: proxy,
 	}
 
-	err = httpServer.Serve(listener)
-	if err != nil {
-		panic(err)
-	}
+	return server.Serve(ls[0])
 }
 
 type configWrapper struct {
