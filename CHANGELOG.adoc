@@ -5,6 +5,6 @@
 This document provides a high-level view of the changes to docker-wsl-proxy by release.
 For a detailed view of what has changed, refer to the {uri-project}/commits/main[commit history] on GitHub.
 
-== Unreleased
+== 0.0.1 (2022-02-13) - @slonopotamus
 
 * Initial release
