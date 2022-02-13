@@ -2,67 +2,147 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/client"
 	"github.com/docker/docker/daemon/listeners"
 	"github.com/docker/go-connections/sockets"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os/exec"
 	"strings"
+	"time"
 )
 
+type CmdConn struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout io.ReadCloser
+}
+
+func (c CmdConn) Read(b []byte) (n int, err error) {
+	return c.stdout.Read(b)
+}
+
+func (c CmdConn) Write(b []byte) (n int, err error) {
+	return c.stdin.Write(b)
+}
+
+func (c CmdConn) Close() error {
+	err := c.cmd.Process.Kill()
+	_ = c.cmd.Wait()
+	return err
+}
+
+func (c CmdConn) LocalAddr() net.Addr {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c CmdConn) RemoteAddr() net.Addr {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c CmdConn) SetDeadline(t time.Time) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c CmdConn) SetReadDeadline(t time.Time) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c CmdConn) SetWriteDeadline(t time.Time) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func configureTransport(transport *http.Transport, connectString string) error {
+	connectURL, err := url.Parse(connectString)
+	if err != nil {
+		return err
+	}
+
+	if connectURL.Scheme == "wsl" {
+		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			cmd := exec.Command("wsl.exe", "-d", connectURL.Host, "socat", fmt.Sprintf("UNIX-CONNECT:%s", connectURL.Path), "-")
+			stdin, err := cmd.StdinPipe()
+			if err != nil {
+				return nil, err
+			}
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				return nil, err
+			}
+			err = cmd.Start()
+			if err != nil {
+				return nil, err
+			}
+			return CmdConn{cmd, stdin, stdout}, nil
+		}
+		return nil
+	}
+
+	connectURL, err = client.ParseHostURL(connectString)
+	if err != nil {
+		return err
+	}
+
+	return sockets.ConfigureTransport(transport, connectURL.Scheme, connectURL.Host)
+}
+
 func main() {
-	// var wslDistro = flag.String("wsl-distro", "stevedore", "")
-	var socketGroup = flag.String("g", "docker-users", "")
-
-	const listenProto = "npipe"
-	const listenAddr = "//./pipe/docker_engine_proxy"
-
-	// TODO: we need to connect to docker running within WSL2.
-	const connectProto = "npipe"
-	const connectAddr = "//./pipe/docker_engine_linux"
+	connectString := flag.String("c", "wsl://stevedore/var/run/docker.sock", "")
+	listenString := flag.String("l", "npipe:////./pipe/docker_engine_linux", "")
+	socketGroup := flag.String("g", "docker-users", "")
 
 	flag.Parse()
 
-	proxyTarget := url.URL{
+	listenURL, err := client.ParseHostURL(*listenString)
+	if err != nil {
+		panic(err)
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
 		Scheme: "http",
 		Host:   "docker",
-	}
-
-	var err error
-
-	proxy := httputil.NewSingleHostReverseProxy(&proxyTarget)
+	})
 	proxy.Director = proxyDirector(proxy.Director)
 
-	proxy.Transport, err = createTransport(connectProto, connectAddr)
+	proxy.Transport, err = createTransport(*connectString)
 	if err != nil {
 		panic(err)
 	}
 
-	err = serve(listenProto, listenAddr, *socketGroup, proxy)
+	err = serve(listenURL, *socketGroup, proxy)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func createTransport(proto string, addr string) (http.RoundTripper, error) {
+func createTransport(connectString string) (http.RoundTripper, error) {
 	transport := &http.Transport{}
-	return transport, sockets.ConfigureTransport(transport, proto, addr)
+	return transport, configureTransport(transport, connectString)
 }
 
-func serve(proto string, addr string, socketGroup string, proxy *httputil.ReverseProxy) error {
-	ls, err := listeners.Init(proto, addr, socketGroup, nil)
+func serve(listenURL *url.URL, socketGroup string, proxy *httputil.ReverseProxy) error {
+	ls, err := listeners.Init(listenURL.Scheme, listenURL.Host, socketGroup, nil)
 	if err != nil {
 		return err
 	}
 
 	server := http.Server{
-		Addr:    addr,
+		Addr:    listenURL.Host,
 		Handler: proxy,
 	}
 
