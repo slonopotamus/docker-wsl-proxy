@@ -1,0 +1,10 @@
+= docker-wsl-proxy
+:slug: slonopotamus/docker-wsl-proxy
+:uri-project: https://github.com/{slug}
+
+This document provides a high-level view of the changes to docker-wsl-proxy by release.
+For a detailed view of what has changed, refer to the {uri-project}/commits/main[commit history] on GitHub.
+
+== Unreleased
+
+* Initial release

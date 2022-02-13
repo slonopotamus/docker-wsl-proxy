@@ -102,9 +102,18 @@ func configureTransport(transport *http.Transport, connectString string) error {
 }
 
 func main() {
-	connectString := flag.String("c", "wsl://stevedore/var/run/docker.sock", "")
-	listenString := flag.String("l", "npipe:////./pipe/docker_engine_linux", "")
-	socketGroup := flag.String("g", "docker-users", "")
+	connectString := flag.String(
+		"c", "wsl://stevedore/var/run/docker.sock",
+		"address of docker daemon",
+	)
+	listenString := flag.String(
+		"l", "npipe:////./pipe/docker_engine",
+		"address where docker-wsl-proxy will listen to incoming connections",
+	)
+	socketGroup := flag.String(
+		"g", "docker-users",
+		"Windows group that will have access to docker-wsl-proxy",
+	)
 
 	flag.Parse()
 

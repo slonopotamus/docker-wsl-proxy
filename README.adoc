@@ -11,10 +11,17 @@ image:https://img.shields.io/github/release/{slug}.svg[Download,link={uri-projec
 
 docker-wsl-proxy allows connecting from Windows to Docker running in WSL2.
 
-There are two important aspects of this task:
+There are several important aspects of this task:
 
 - Conversion of Windows paths to their WSL equivalents
 - Tunnelling Docker API calls _into_ WSL2
+- Exposing container ports to host system
+
+== Usage
+
+. Run `dockerd` inside WSL2
+. Run `docker-wsl-proxy.exe -c wsl://<wsl distribution name>/var/run/docker.sock`
+. Run Docker commands on Windows host
 
 == Building from source
 
