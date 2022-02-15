@@ -15,10 +15,11 @@ There are several important aspects of this task:
 
 - Tunnelling Docker API calls _into_ WSL2
 - Exposing container ports to host system
-- Conversion of Windows paths to their WSL equivalents (not working yet, see https://github.com/slonopotamus/docker-wsl-proxy/issues/1[#1])
+- Conversion of Windows paths to their WSL equivalents
 
 == Usage
 
+. Install `socat` in WSL2
 . Run `dockerd` inside WSL2
 . Run `docker-wsl-proxy.exe -c wsl://<wsl distribution name>/var/run/docker.sock`
 . Run Docker commands on Windows host

@@ -6,18 +6,24 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/daemon/listeners"
+	"github.com/docker/docker/volume/mounts"
 	"github.com/docker/go-connections/sockets"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os/exec"
+	"path"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -127,6 +133,7 @@ func main() {
 		Host:   "docker",
 	})
 	proxy.Director = proxyDirector(proxy.Director)
+	proxy.ModifyResponse = proxyModifyResponse
 
 	proxy.Transport, err = createTransport(*connectString)
 	if err != nil {
@@ -180,19 +187,19 @@ func proxyDirector(origDirector func(*http.Request)) func(req *http.Request) {
 }
 
 func handleContainerCreate(req *http.Request) error {
-	buf := make([]byte, req.ContentLength)
-	_, err := io.ReadFull(req.Body, buf)
+	buf, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		return err
 	}
 
-	config := configWrapper{}
-	err = json.Unmarshal(buf, &config)
-	if err != nil {
+	var config configWrapper
+	if err = json.Unmarshal(buf, &config); err != nil {
 		return err
 	}
 
-	// TODO: rewrite config.HostConfig.Binds
+	for index, bind := range config.HostConfig.Binds {
+		config.HostConfig.Binds[index] = rewriteBindToWSL(bind)
+	}
 
 	buf, err = json.Marshal(config)
 	if err != nil {
@@ -203,4 +210,109 @@ func handleContainerCreate(req *http.Request) error {
 	req.ContentLength = int64(len(buf))
 
 	return nil
+}
+
+var containerInspectRegex = regexp.MustCompile("/containers/.*/json")
+
+func proxyModifyResponse(response *http.Response) (err error) {
+	if containerInspectRegex.MatchString(response.Request.RequestURI) && response.StatusCode == http.StatusOK {
+		err = handleContainerInspect(response)
+	}
+
+	return err
+}
+
+func handleContainerInspect(response *http.Response) error {
+	buf, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
+
+	var containerJSON types.ContainerJSON
+	if err = json.Unmarshal(buf, &containerJSON); err != nil {
+		return err
+	}
+
+	for index, bind := range containerJSON.HostConfig.Binds {
+		containerJSON.HostConfig.Binds[index] = rewriteBindToWindows(bind)
+	}
+
+	for _, m := range containerJSON.Mounts {
+		if m.Type == mount.TypeBind {
+			m.Source = rewriteBindSourceToWindows(m.Source)
+		}
+	}
+
+	buf, err = json.Marshal(containerJSON)
+	if err != nil {
+		return err
+	}
+
+	response.Body = io.NopCloser(bytes.NewReader(buf))
+	response.ContentLength = int64(len(buf))
+	return err
+}
+
+func rewriteBindToWSL(bind string) string {
+	bind = path.Clean(bind)
+
+	var unixPrefixes = [...]string{"/host_mnt/", "/mnt/"}
+	for _, prefix := range unixPrefixes {
+		if strings.HasPrefix(bind, prefix) {
+			return "/mnt/" + bind[len(prefix):]
+		}
+	}
+
+	if len(bind) > 1 && bind[0] == '/' {
+		if bind[1] == ':' {
+			return bind
+		} else if len(bind) > 2 && bind[2] == ':' {
+			return path.Join("/mnt", strings.ToLower(bind[1:]))
+		} else if bind[2] == '/' {
+			return path.Join("/mnt", strings.ToLower(bind[1:2]), bind[2:])
+		} else {
+			return bind
+		}
+	}
+
+	// TODO: use NewLCOWParser from https://github.com/moby/moby/commit/28b0f47599e9ff32d2abebb54ee4b2a60977f722
+	var windowsBindParser = mounts.NewParser(mounts.OSLinux)
+
+	m, err := windowsBindParser.ParseMountRaw(bind, "")
+	if err != nil {
+		// Just hope that user is smarter than us
+		return bind
+	}
+	m.Source = strings.ReplaceAll(m.Source, `\`, `/`)
+
+	var driveSeps = [...]string{":/", "/"}
+	for _, driveSep := range driveSeps {
+		driveSepIdx := strings.Index(m.Source, driveSep)
+		if driveSepIdx >= 0 {
+			return path.Join("/mnt", strings.ToLower(m.Source[:driveSepIdx]), m.Source[driveSepIdx+len(driveSep):]) + bind[len(m.Source):]
+		}
+	}
+
+	return bind
+}
+
+func rewriteBindToWindows(bind string) string {
+	parts := strings.Split(bind, ":")
+	parts[0] = rewriteBindSourceToWindows(parts[0])
+	return strings.Join(parts, ":")
+}
+
+func rewriteBindSourceToWindows(source string) string {
+	source = path.Clean(source)
+
+	if strings.HasPrefix(source, "/") {
+		p := strings.Split(source[1:], "/")
+		if len(p) > 1 && p[0] == "mnt" {
+			p = p[1:]
+			p[0] = strings.ToUpper(p[0]) + ":"
+			source = strings.Join(p, `\`)
+		}
+	}
+
+	return source
 }

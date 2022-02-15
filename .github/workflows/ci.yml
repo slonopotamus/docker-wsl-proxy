@@ -18,6 +18,7 @@ jobs:
       - name: setup go
         uses: actions/setup-go@v2
       - run: go build
+      - run: go test
       - name: upload artifact
         uses: actions/upload-artifact@v2
         with:
