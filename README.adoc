@@ -13,9 +13,9 @@ docker-wsl-proxy allows connecting from Windows to Docker running in WSL2.
 
 There are several important aspects of this task:
 
-- Conversion of Windows paths to their WSL equivalents (not working yet, see https://github.com/slonopotamus/docker-wsl-proxy/issues/1[#1])
 - Tunnelling Docker API calls _into_ WSL2
-- Exposing container ports to host system (not working yet, see https://github.com/slonopotamus/docker-wsl-proxy/issues/2[#2])
+- Exposing container ports to host system
+- Conversion of Windows paths to their WSL equivalents (not working yet, see https://github.com/slonopotamus/docker-wsl-proxy/issues/1[#1])
 
 == Usage
 
