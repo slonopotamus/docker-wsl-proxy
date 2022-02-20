@@ -283,13 +283,16 @@ func rewriteBindToWSL(bind string) string {
 		// Just hope that user is smarter than us
 		return bind
 	}
-	m.Source = strings.ReplaceAll(m.Source, `\`, `/`)
 
-	var driveSeps = [...]string{":/", "/"}
-	for _, driveSep := range driveSeps {
-		driveSepIdx := strings.Index(m.Source, driveSep)
-		if driveSepIdx >= 0 {
-			return path.Join("/mnt", strings.ToLower(m.Source[:driveSepIdx]), m.Source[driveSepIdx+len(driveSep):]) + bind[len(m.Source):]
+	if m.Type == mount.TypeBind {
+		m.Source = strings.ReplaceAll(m.Source, `\`, `/`)
+
+		var driveSeps = [...]string{":/", "/"}
+		for _, driveSep := range driveSeps {
+			driveSepIdx := strings.Index(m.Source, driveSep)
+			if driveSepIdx >= 0 {
+				return path.Join("/mnt", strings.ToLower(m.Source[:driveSepIdx]), m.Source[driveSepIdx+len(driveSep):]) + bind[len(m.Source):]
+			}
 		}
 	}
 
