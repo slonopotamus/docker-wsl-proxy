@@ -5,6 +5,10 @@
 This document provides a high-level view of the changes to docker-wsl-proxy by release.
 For a detailed view of what has changed, refer to the {uri-project}/commits/main[commit history] on GitHub.
 
+== Unreleased
+
+* Fix path rewriting when creating container with specified name. https://github.com/slonopotamus/stevedore/issues/38[slonopotamus/stevedore#38]
+
 == 0.0.3 (2022-02-21) - @slonopotamus
 
 * Avoid rewriting non-bind mounts (like, volumes)

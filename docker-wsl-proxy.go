@@ -174,7 +174,7 @@ type configWrapper struct {
 
 func proxyDirector(origDirector func(*http.Request)) func(req *http.Request) {
 	return func(req *http.Request) {
-		if strings.HasSuffix(req.RequestURI, "/containers/create") {
+		if strings.HasSuffix(req.URL.Path, "/containers/create") {
 			err := handleContainerCreate(req)
 			if err != nil {
 				panic(err)
@@ -212,10 +212,10 @@ func handleContainerCreate(req *http.Request) error {
 	return nil
 }
 
-var containerInspectRegex = regexp.MustCompile("/containers/.*/json")
+var containerInspectRegexp = regexp.MustCompile(`/.*/containers/.*/json`)
 
 func proxyModifyResponse(response *http.Response) (err error) {
-	if containerInspectRegex.MatchString(response.Request.RequestURI) && response.StatusCode == http.StatusOK {
+	if containerInspectRegexp.MatchString(response.Request.URL.Path) && response.StatusCode == http.StatusOK {
 		err = handleContainerInspect(response)
 	}
 
