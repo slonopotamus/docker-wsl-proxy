@@ -22,6 +22,8 @@ func TestRewriteBindToWSL(t *testing.T) {
 		{`C:/:/c`, `/mnt/c:/c`},
 		{`/proc:/proc`, `/proc:/proc`},
 		{`/:/host`, `/:/host`},
+		// See https://github.com/slonopotamus/stevedore/issues/38#issuecomment-1076167200
+		{`C:\bootmgr:/bootmgr`, `/mnt/c/bootmgr:/bootmgr`},
 	}
 
 	for _, tc := range testCases {

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"docker-wsl-proxy/mounts"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/daemon/listeners"
-	"github.com/docker/docker/volume/mounts"
 	"github.com/docker/go-connections/sockets"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"io"
@@ -26,6 +26,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	_ "unsafe"
 )
 
 type CmdConn struct {
@@ -275,8 +276,9 @@ func rewriteBindToWSL(bind string) string {
 		}
 	}
 
-	// TODO: use NewLCOWParser from https://github.com/moby/moby/commit/28b0f47599e9ff32d2abebb54ee4b2a60977f722
-	var windowsBindParser = mounts.NewParser(mounts.OSLinux)
+	// We cannot use Moby standard lcowParser because it actively rejects file mounts that are perfectly valid under WSL.
+	// See https://github.com/moby/moby/blob/v20.10.13/volume/mounts/windows_parser.go#L127
+	var windowsBindParser = &mounts.LCOWParser{}
 
 	m, err := windowsBindParser.ParseMountRaw(bind, "")
 	if err != nil {
