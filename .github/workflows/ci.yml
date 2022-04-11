@@ -20,7 +20,7 @@ jobs:
       - run: go build
       - run: go test
       - name: upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: binary
           path: "*.exe"
