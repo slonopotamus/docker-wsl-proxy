@@ -7,7 +7,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3
       - name: setup go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v3
       - name: go fmt
         uses: Jerome1337/gofmt-action@v1.0.4
   build:
@@ -16,7 +16,7 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3
       - name: setup go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v3
       - run: go build
       - run: go test
       - name: upload artifact
