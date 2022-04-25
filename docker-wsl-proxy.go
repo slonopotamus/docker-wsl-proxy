@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"docker-wsl-proxy/mounts"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -202,6 +201,12 @@ func handleContainerCreate(req *http.Request) error {
 		config.HostConfig.Binds[index] = rewriteBindToWSL(bind)
 	}
 
+	for _, m := range config.HostConfig.Mounts {
+		if m.Type == mount.TypeBind {
+			m.Source = rewriteBindToWSL(m.Source)
+		}
+	}
+
 	buf, err = json.Marshal(config)
 	if err != nil {
 		return err
@@ -238,6 +243,12 @@ func handleContainerInspect(response *http.Response) error {
 		containerJSON.HostConfig.Binds[index] = rewriteBindToWindows(bind)
 	}
 
+	for _, m := range containerJSON.HostConfig.Mounts {
+		if m.Type == mount.TypeBind {
+			m.Source = rewriteBindSourceToWindows(m.Source)
+		}
+	}
+
 	for _, m := range containerJSON.Mounts {
 		if m.Type == mount.TypeBind {
 			m.Source = rewriteBindSourceToWindows(m.Source)
@@ -254,51 +265,21 @@ func handleContainerInspect(response *http.Response) error {
 	return err
 }
 
-func rewriteBindToWSL(bind string) string {
-	bind = path.Clean(bind)
-
-	var unixPrefixes = [...]string{"/host_mnt/", "/mnt/"}
-	for _, prefix := range unixPrefixes {
-		if strings.HasPrefix(bind, prefix) {
-			return "/mnt/" + bind[len(prefix):]
-		}
+func rewriteBindToWSL(s string) string {
+	s = strings.ReplaceAll(s, `\`, "/")
+	s = path.Clean(s)
+	parts := strings.Split(s, ":")
+	if strings.HasPrefix(parts[0], "/host_mnt/") {
+		parts[0] = "/mnt/" + parts[0][10:]
+		s = strings.Join(parts, ":")
+	} else if len(parts[0]) == 1 && parts[0] != "/" {
+		s = "/mnt/" + strings.ToLower(parts[0])
+		s += strings.Join(parts[1:], ":")
+	} else if len(parts[0]) > 2 && parts[0][0] == '/' && parts[0][2] == '/' {
+		parts[0] = "/mnt/" + strings.ToLower(parts[0][1:2]) + parts[0][2:]
+		s = strings.Join(parts, ":")
 	}
-
-	if len(bind) > 1 && bind[0] == '/' {
-		if bind[1] == ':' {
-			return bind
-		} else if len(bind) > 2 && bind[2] == ':' {
-			return path.Join("/mnt", strings.ToLower(bind[1:]))
-		} else if bind[2] == '/' {
-			return path.Join("/mnt", strings.ToLower(bind[1:2]), bind[2:])
-		} else {
-			return bind
-		}
-	}
-
-	// We cannot use Moby standard lcowParser because it actively rejects file mounts that are perfectly valid under WSL.
-	// See https://github.com/moby/moby/blob/v20.10.13/volume/mounts/windows_parser.go#L127
-	var windowsBindParser = &mounts.LCOWParser{}
-
-	m, err := windowsBindParser.ParseMountRaw(bind, "")
-	if err != nil {
-		// Just hope that user is smarter than us
-		return bind
-	}
-
-	if m.Type == mount.TypeBind {
-		m.Source = strings.ReplaceAll(m.Source, `\`, `/`)
-
-		var driveSeps = [...]string{":/", "/"}
-		for _, driveSep := range driveSeps {
-			driveSepIdx := strings.Index(m.Source, driveSep)
-			if driveSepIdx >= 0 {
-				return path.Join("/mnt", strings.ToLower(m.Source[:driveSepIdx]), m.Source[driveSepIdx+len(driveSep):]) + bind[len(m.Source):]
-			}
-		}
-	}
-
-	return bind
+	return s
 }
 
 func rewriteBindToWindows(bind string) string {

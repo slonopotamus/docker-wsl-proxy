@@ -5,6 +5,11 @@
 This document provides a high-level view of the changes to docker-wsl-proxy by release.
 For a detailed view of what has changed, refer to the {uri-project}/commits/main[commit history] on GitHub.
 
+== Unreleased
+
+* Rewrite `HostConfig.Mounts` to WSL2 paths when creating container
+* Simplify path rewriting logic
+
 == 0.0.5 (2022-03-23) - @slonopotamus
 
 * Fix bind-mounting a single file. https://github.com/slonopotamus/stevedore/issues/38[slonopotamus/stevedore#38]

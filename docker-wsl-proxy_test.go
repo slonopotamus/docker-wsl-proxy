@@ -18,12 +18,12 @@ func TestRewriteBindToWSL(t *testing.T) {
 		// Compatibility with Docker Desktop
 		{`/host_mnt/c/windows/system32:/c`, `/mnt/c/windows/system32:/c`},
 		// Additional cases
-		{`C:\:/c`, `/mnt/c:/c`},
-		{`C:/:/c`, `/mnt/c:/c`},
+		{`C:\:/c`, `/mnt/c/:/c`},
+		{`C:/:/c`, `/mnt/c/:/c`},
 		{`/proc:/proc`, `/proc:/proc`},
 		{`/:/host`, `/:/host`},
 		// See https://github.com/slonopotamus/stevedore/issues/38#issuecomment-1076167200
-		{`C:\Windows\System32\cmd.exe:/cmd.exe`, `/mnt/c/windows/system32/cmd.exe:/cmd.exe`},
+		{`C:\windows\system32\cmd.exe:/cmd.exe`, `/mnt/c/windows/system32/cmd.exe:/cmd.exe`},
 	}
 
 	for _, tc := range testCases {
