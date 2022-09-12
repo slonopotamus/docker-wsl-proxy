@@ -3,7 +3,7 @@ module docker-wsl-proxy
 go 1.17
 
 require (
-	github.com/docker/docker v20.10.17+incompatible
+	github.com/docker/docker v20.10.18+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/opencontainers/image-spec v1.0.2
 	gotest.tools v2.2.0+incompatible
