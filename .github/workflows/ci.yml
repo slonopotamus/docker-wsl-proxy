@@ -9,7 +9,7 @@ jobs:
       - name: setup go
         uses: actions/setup-go@v3
       - name: go fmt
-        uses: Jerome1337/gofmt-action@v1.0.4
+        uses: Jerome1337/gofmt-action@v1.0.5
   build:
     runs-on: windows-2022
     steps:
