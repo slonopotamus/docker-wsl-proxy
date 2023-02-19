@@ -7,6 +7,8 @@ Marat Radchenko
 image:{uri-project}/workflows/CI/badge.svg?branch=main[Build Status,link={uri-ci}]
 image:https://img.shields.io/github/release/{slug}.svg[Download,link={uri-project}/releases/latest]
 
+**This repo is deprecated. docker-wsl-proxy was a helper binary for Stevedore WSL2 support. Other tools like Rancher Desktop have their own similar implementations.**
+
 == Overview
 
 docker-wsl-proxy allows connecting from Windows to Docker running in WSL2.
